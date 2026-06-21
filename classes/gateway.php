@@ -86,6 +86,17 @@ class gateway extends \core_payment\gateway {
         $mform->setType('secretkey', PARAM_TEXT);
         $mform->addHelpButton('secretkey', 'secretkey', 'paygw_stripe');
 
+        // When enabled, the plugin omits the payment_method_types parameter when creating the
+        // Stripe Checkout Session. Stripe then uses "dynamic payment methods", i.e. the set of
+        // methods enabled and ordered in the Stripe Dashboard (Settings > Payment methods),
+        // automatically filtered by currency, amount and customer location. No code change is
+        // required to add or remove a method afterwards.
+        $mform->addElement('advcheckbox', 'usedynamicpaymentmethods',
+            get_string('usedynamicpaymentmethods', 'paygw_stripe'),
+            get_string('usedynamicpaymentmethods_desc', 'paygw_stripe'));
+        $mform->setDefault('usedynamicpaymentmethods', false);
+        $mform->addHelpButton('usedynamicpaymentmethods', 'usedynamicpaymentmethods', 'paygw_stripe');
+
         $paymentmethods = [
             'card' => get_string('paymentmethod:card', 'paygw_stripe'),
             'alipay' => get_string('paymentmethod:alipay', 'paygw_stripe'),
@@ -105,6 +116,8 @@ class gateway extends \core_payment\gateway {
         $mform->setType('paymentmethods', PARAM_TEXT);
         $mform->setDefault('paymentmethods', 'card');
         $method->setMultiple(true);
+        // The manual list is irrelevant when dynamic payment methods are used, so hide it.
+        $mform->hideIf('paymentmethods', 'usedynamicpaymentmethods', 'checked');
 
         $mform->addElement('advcheckbox', 'allowpromotioncodes', get_string('allowpromotioncodes', 'paygw_stripe'));
         $mform->setDefault('allowpromotioncodes', true);
@@ -176,7 +189,11 @@ class gateway extends \core_payment\gateway {
      */
     public static function validate_gateway_form(account_gateway $form,
         \stdClass $data, array $files, array &$errors): void {
-        if ($data->enabled && (empty($data->apikey) || empty($data->secretkey) || empty($data->paymentmethods))) {
+        // When dynamic payment methods are enabled the manual list may legitimately be empty,
+        // because the available methods are managed in the Stripe Dashboard instead.
+        $usedynamic = !empty($data->usedynamicpaymentmethods);
+        if ($data->enabled && (empty($data->apikey) || empty($data->secretkey) ||
+                (!$usedynamic && empty($data->paymentmethods)))) {
             $errors['enabled'] = get_string('gatewaycannotbeenabled', 'payment');
         }
     }

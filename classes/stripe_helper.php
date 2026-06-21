@@ -318,12 +318,11 @@ class stripe_helper {
             $customer = $this->create_customer($USER);
         }
 
-        $session = $this->stripe->checkout->sessions->create([
+        $params = [
                 'success_url' => $CFG->wwwroot . '/payment/gateway/stripe/process.php?component=' . $component . '&paymentarea=' .
                         $paymentarea . '&itemid=' . $itemid . '&session_id={CHECKOUT_SESSION_ID}',
                 'cancel_url' => $CFG->wwwroot . '/payment/gateway/stripe/cancelled.php?component=' . $component . '&paymentarea=' .
                         $paymentarea . '&itemid=' . $itemid,
-                'payment_method_types' => $config->paymentmethods,
                 'payment_method_options' => [
                         'wechat_pay' => [
                                 'client' => "web"
@@ -369,7 +368,16 @@ class stripe_helper {
                         'enabled' => true
                 ],
 
-        ]);
+        ];
+
+        // When dynamic payment methods are disabled, restrict the session to the manually
+        // selected methods. When enabled, the parameter is omitted so Stripe uses the methods
+        // configured in the Dashboard (dynamic payment methods), filtered by currency and amount.
+        if (empty($config->usedynamicpaymentmethods)) {
+            $params['payment_method_types'] = $config->paymentmethods;
+        }
+
+        $session = $this->stripe->checkout->sessions->create($params);
 
         return $session->id;
     }
@@ -419,12 +427,11 @@ class stripe_helper {
         }
 
         // Create checkout session to set up subscription for customer.
-        $session = $this->stripe->checkout->sessions->create([
+        $params = [
                 'success_url' => $CFG->wwwroot . '/payment/gateway/stripe/process.php?component=' . $component . '&paymentarea=' .
                         $paymentarea . '&itemid=' . $itemid . '&session_id={CHECKOUT_SESSION_ID}',
                 'cancel_url' => $CFG->wwwroot . '/payment/gateway/stripe/cancelled.php?component=' . $component . '&paymentarea=' .
                         $paymentarea . '&itemid=' . $itemid,
-                'payment_method_types' => $config->paymentmethods,
                 // Note: invoice_creation is only valid for mode=payment. For mode=subscription,
                 // Stripe generates an invoice automatically for every billing cycle, so this
                 // parameter must be omitted here (it caused InvalidRequestException otherwise).
@@ -456,7 +463,14 @@ class stripe_helper {
                 'tax_id_collection' => [
                         'enabled' => true
                 ]
-        ]);
+        ];
+
+        // See generate_payment(): omit payment_method_types to use dynamic payment methods.
+        if (empty($config->usedynamicpaymentmethods)) {
+            $params['payment_method_types'] = $config->paymentmethods;
+        }
+
+        $session = $this->stripe->checkout->sessions->create($params);
 
         return $session->id;
     }
