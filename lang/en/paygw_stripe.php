@@ -112,6 +112,7 @@ $string['paymentmethod:eps'] = 'EPS';
 $string['paymentmethod:giropay'] = 'giropay';
 $string['paymentmethod:ideal'] = 'iDEAL';
 $string['paymentmethod:p24'] = 'P24';
+$string['paymentmethod:blik'] = 'BLIK';
 $string['paymentmethod:sepa_debit'] = 'SEPA Direct Debit';
 $string['paymentmethod:sofort'] = 'Sofort';
 $string['paymentmethod:upi'] = 'UPI';

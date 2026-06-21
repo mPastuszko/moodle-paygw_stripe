@@ -94,6 +94,9 @@ class gateway extends \core_payment\gateway {
             'giropay' => get_string('paymentmethod:giropay', 'paygw_stripe'),
             'ideal' => get_string('paymentmethod:ideal', 'paygw_stripe'),
             'p24' => get_string('paymentmethod:p24', 'paygw_stripe'),
+            // BLIK is a Polish mobile payment method. It is only presented to customers when the
+            // Checkout Session currency is PLN, and must also be enabled in the Stripe Dashboard.
+            'blik' => get_string('paymentmethod:blik', 'paygw_stripe'),
             'sepa_debit' => get_string('paymentmethod:sepa_debit', 'paygw_stripe'),
             'sofort' => get_string('paymentmethod:sofort', 'paygw_stripe'),
             'upi' => get_string('paymentmethod:upi', 'paygw_stripe'),
