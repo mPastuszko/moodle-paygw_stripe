@@ -425,7 +425,9 @@ class stripe_helper {
                 'cancel_url' => $CFG->wwwroot . '/payment/gateway/stripe/cancelled.php?component=' . $component . '&paymentarea=' .
                         $paymentarea . '&itemid=' . $itemid,
                 'payment_method_types' => $config->paymentmethods,
-                'invoice_creation' => ['enabled' => true],
+                // Note: invoice_creation is only valid for mode=payment. For mode=subscription,
+                // Stripe generates an invoice automatically for every billing cycle, so this
+                // parameter must be omitted here (it caused InvalidRequestException otherwise).
                 'mode' => 'subscription',
                 'line_items' => [[
                         'price' => $price,
