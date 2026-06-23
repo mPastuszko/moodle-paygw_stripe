@@ -122,14 +122,41 @@ class gateway extends \core_payment\gateway {
         $mform->addElement('advcheckbox', 'allowpromotioncodes', get_string('allowpromotioncodes', 'paygw_stripe'));
         $mform->setDefault('allowpromotioncodes', true);
 
-        $mform->addElement('advcheckbox', 'enableautomatictax', get_string('enableautomatictax', 'paygw_stripe'),
-            get_string('enableautomatictax_desc', 'paygw_stripe'));
+        // Tax handling mode. The three modes are mutually exclusive:
+        //  - none:      the plugin adds no tax.
+        //  - automatic: use Stripe Tax (automatic_tax). Requires Stripe Tax to be configured in the
+        //               Dashboard (origin address, registrations, product tax codes).
+        //  - manual:    apply a fixed Stripe Tax Rate (txr_...) to every line item. This is the free
+        //               "Tax rates" feature and does not require Stripe Tax. Stripe forbids combining
+        //               automatic_tax with manual tax_rates, hence a single selector rather than a
+        //               separate checkbox.
+        // Note: replaces the previous "enableautomatictax" checkbox; see stripe_helper for the
+        // backward-compatibility fallback that still honours older saved configs.
+        $mform->addElement('select', 'taxmode', get_string('taxmode', 'paygw_stripe'), [
+            'none' => get_string('taxmode:none', 'paygw_stripe'),
+            'automatic' => get_string('taxmode:automatic', 'paygw_stripe'),
+            'manual' => get_string('taxmode:manual', 'paygw_stripe'),
+        ]);
+        $mform->setType('taxmode', PARAM_ALPHA);
+        $mform->setDefault('taxmode', 'none');
+        $mform->addHelpButton('taxmode', 'taxmode', 'paygw_stripe');
 
+        // Default tax behavior only applies to Stripe Tax (automatic mode). For manual tax rates the
+        // inclusive/exclusive setting is a property of the Tax Rate object itself, set in the Dashboard.
         $mform->addElement('select', 'defaulttaxbehavior', get_string('defaulttaxbehavior', 'paygw_stripe'), [
             'exclusive' => get_string('taxbehavior:exclusive', 'paygw_stripe'),
             'inclusive' => get_string('taxbehavior:inclusive', 'paygw_stripe'),
         ]);
         $mform->addHelpButton('defaulttaxbehavior', 'defaulttaxbehavior', 'paygw_stripe');
+        $mform->hideIf('defaulttaxbehavior', 'taxmode', 'neq', 'automatic');
+
+        // Manual Stripe Tax Rate ID (txr_...). Mode-specific in Stripe: a test-mode rate ID is not
+        // valid in live mode, which is why this belongs in the per-account gateway config (each Moodle
+        // payment account maps to a separate Stripe project/key) rather than a single global setting.
+        $mform->addElement('text', 'manualtaxrate', get_string('manualtaxrate', 'paygw_stripe'));
+        $mform->setType('manualtaxrate', PARAM_TEXT);
+        $mform->addHelpButton('manualtaxrate', 'manualtaxrate', 'paygw_stripe');
+        $mform->hideIf('manualtaxrate', 'taxmode', 'neq', 'manual');
 
         $mform->addElement('select', 'type', get_string('paymenttype', 'paygw_stripe'), [
             'onetime' => get_string('paymenttype:onetime', 'paygw_stripe'),
@@ -195,6 +222,12 @@ class gateway extends \core_payment\gateway {
         if ($data->enabled && (empty($data->apikey) || empty($data->secretkey) ||
                 (!$usedynamic && empty($data->paymentmethods)))) {
             $errors['enabled'] = get_string('gatewaycannotbeenabled', 'payment');
+        }
+
+        // The manual tax mode is meaningless without a tax rate ID to apply.
+        if ($data->enabled && ($data->taxmode ?? 'none') === 'manual'
+                && trim($data->manualtaxrate ?? '') === '') {
+            $errors['manualtaxrate'] = get_string('manualtaxrate_required', 'paygw_stripe');
         }
     }
 }

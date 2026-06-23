@@ -194,6 +194,40 @@ class stripe_helper {
     }
 
     /**
+     * Whether Stripe Tax (automatic_tax) should be enabled for this gateway config.
+     *
+     * The gateway uses a single "taxmode" selector (none|automatic|manual). For backward
+     * compatibility, configs saved before that selector existed only have the legacy
+     * "enableautomatictax" checkbox, which we still honour here.
+     *
+     * @param object $config Gateway configuration
+     * @return bool
+     */
+    private function is_automatic_tax(object $config): bool {
+        if (isset($config->taxmode)) {
+            return $config->taxmode === 'automatic';
+        }
+        return !empty($config->enableautomatictax);
+    }
+
+    /**
+     * Return the manual Stripe Tax Rate ID (txr_...) to apply to line items, or null.
+     *
+     * Only returns a value in "manual" tax mode. Manual tax rates and automatic_tax are
+     * mutually exclusive in Stripe Checkout, so callers must not enable both.
+     *
+     * @param object $config Gateway configuration
+     * @return string|null
+     */
+    private function get_manual_tax_rate(object $config): ?string {
+        if (($config->taxmode ?? '') !== 'manual') {
+            return null;
+        }
+        $rate = trim($config->manualtaxrate ?? '');
+        return $rate !== '' ? $rate : null;
+    }
+
+    /**
      * Get the stripe Customer object from the corresponding Moodle user id.
      *
      * @param int $userid
@@ -262,7 +296,7 @@ class stripe_helper {
             $product = $this->create_product($description, $component, $paymentarea, $itemid);
         }
         if (!$price = $this->get_price($product, is_array($subscription))) {
-            $price = $this->create_price($currency, $product->id, $unitamount, $config->enableautomatictax == 1,
+            $price = $this->create_price($currency, $product->id, $unitamount, $this->is_automatic_tax($config),
                     $config->defaulttaxbehavior, $subscription);
         } else {
             // Check if the price details mismatch in any way.
@@ -274,11 +308,11 @@ class stripe_helper {
                     ($price->type == 'recurring' && !is_array($subscription))) {
                 // We cannot update the price or currency, so we must create a new price.
                 $this->stripe->prices->update($price->id, ['active' => false]);
-                $price = $this->create_price($currency, $product->id, $unitamount, $config->enableautomatictax == 1,
+                $price = $this->create_price($currency, $product->id, $unitamount, $this->is_automatic_tax($config),
                         $config->defaulttaxbehavior, $subscription);
             }
             // Set tax behavior if not set already.
-            if ($config->enableautomatictax == 1 && (!isset($price->tax_behavior) || $price->tax_behavior === 'unspecified')) {
+            if ($this->is_automatic_tax($config) && (!isset($price->tax_behavior) || $price->tax_behavior === 'unspecified')) {
                 $price->updateAttributes(['tax_behavior' => $config->tax_behavior ?? 'inclusive']);
                 $price = $this->stripe->prices->update($price->id, ['tax_behavior' => $config->tax_behavior ?? 'inclusive']);
             }
@@ -318,6 +352,17 @@ class stripe_helper {
             $customer = $this->create_customer($USER);
         }
 
+        // Build the line item, attaching a manual Stripe Tax Rate in manual tax mode. Manual
+        // tax_rates and automatic_tax are mutually exclusive in Stripe, so get_manual_tax_rate()
+        // only returns a value when automatic tax is off.
+        $lineitem = [
+                'price' => $price,
+                'quantity' => 1,
+        ];
+        if ($taxrate = $this->get_manual_tax_rate($config)) {
+            $lineitem['tax_rates'] = [$taxrate];
+        }
+
         $params = [
                 'success_url' => $CFG->wwwroot . '/payment/gateway/stripe/process.php?component=' . $component . '&paymentarea=' .
                         $paymentarea . '&itemid=' . $itemid . '&session_id={CHECKOUT_SESSION_ID}',
@@ -330,12 +375,9 @@ class stripe_helper {
                 ],
                 'invoice_creation' => ['enabled' => true],
                 'mode' => 'payment',
-                'line_items' => [[
-                        'price' => $price,
-                        'quantity' => 1
-                ]],
+                'line_items' => [$lineitem],
                 'automatic_tax' => [
-                        'enabled' => $config->enableautomatictax == 1,
+                        'enabled' => $this->is_automatic_tax($config),
                 ],
                 'customer' => $customer->id,
                 'metadata' => [
@@ -426,6 +468,16 @@ class stripe_helper {
             $subscriptiondata['trial_end'] = $this->get_trial_end_date($config)->getTimestamp();
         }
 
+        // Build the line item, attaching a manual Stripe Tax Rate in manual tax mode (mutually
+        // exclusive with automatic_tax, see generate_payment()).
+        $lineitem = [
+                'price' => $price,
+                'quantity' => 1,
+        ];
+        if ($taxrate = $this->get_manual_tax_rate($config)) {
+            $lineitem['tax_rates'] = [$taxrate];
+        }
+
         // Create checkout session to set up subscription for customer.
         $params = [
                 'success_url' => $CFG->wwwroot . '/payment/gateway/stripe/process.php?component=' . $component . '&paymentarea=' .
@@ -436,12 +488,9 @@ class stripe_helper {
                 // Stripe generates an invoice automatically for every billing cycle, so this
                 // parameter must be omitted here (it caused InvalidRequestException otherwise).
                 'mode' => 'subscription',
-                'line_items' => [[
-                        'price' => $price,
-                        'quantity' => 1,
-                ]],
+                'line_items' => [$lineitem],
                 'automatic_tax' => [
-                        'enabled' => $config->enableautomatictax == 1,
+                        'enabled' => $this->is_automatic_tax($config),
                 ],
                 'allow_promotion_codes' => $config->allowpromotioncodes == 1,
                 'subscription_data' => $subscriptiondata,
