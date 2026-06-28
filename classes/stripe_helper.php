@@ -468,14 +468,16 @@ class stripe_helper {
             $subscriptiondata['trial_end'] = $this->get_trial_end_date($config)->getTimestamp();
         }
 
-        // Build the line item, attaching a manual Stripe Tax Rate in manual tax mode (mutually
-        // exclusive with automatic_tax, see generate_payment()).
+        // In manual tax mode, apply the Stripe Tax Rate to the subscription. For recurring
+        // payments Stripe uses subscription_data.default_tax_rates (line_items.tax_rates is only
+        // for one-time payments). Manual tax rates and automatic_tax remain mutually exclusive, so
+        // get_manual_tax_rate() only returns a value when automatic tax is off.
         $lineitem = [
                 'price' => $price,
                 'quantity' => 1,
         ];
         if ($taxrate = $this->get_manual_tax_rate($config)) {
-            $lineitem['tax_rates'] = [$taxrate];
+            $subscriptiondata['default_tax_rates'] = [$taxrate];
         }
 
         // Create checkout session to set up subscription for customer.
